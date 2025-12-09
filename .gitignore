@@ -1,0 +1,41 @@
+# macOS 系统文件
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows 预览/缓存
+Thumbs.db
+ehthumbs.db
+
+# 编辑器配置
+.vscode/
+.idea/
+
+# 包管理和调试日志
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 构建/打包输出
+dist/
+build/
+out/
+tmp/
+temp/
+*.log
+
+# 覆盖率与报告
+coverage/
+*.lcov
+
+# 环境变量文件（保留示例）
+.env
+.env.*
+!.env.example
+
+# 交换文件
+*.swp
+*.swo
+

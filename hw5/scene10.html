@@ -1,0 +1,335 @@
+<body bgcolor=black>
+<center><canvas id=canvas width=800 height=800></canvas>
+<script src=webgl.js></script>
+<script>
+
+function Scene() {
+
+// Cylinder side with texture coordinates (flipped horizontally and vertically)
+let tube = (n, radius, height) => {
+   let V = [];
+   for (let i = 0 ; i <= n ; i++) {
+      let theta = 2 * Math.PI * i / n;
+      let c = Math.cos(theta);
+      let s = Math.sin(theta);
+      let u = 1 - (i / n);  // Flip texture horizontally
+      V.push(radius * c, radius * s, -height/2, c, s, 0, u, 1);
+      V.push(radius * c, radius * s,  height/2, c, s, 0, u, 0);
+   }
+   return V;
+}
+
+// Parametric surface generator
+let parametric = (f, nu, nv, other) => {
+   let V = [];
+   for (let j = 0 ; j < nv ; j++) {
+      for (let i = 0 ; i <= nu ; i++) {
+         V.push(f(i/nu, j/nv, other));
+         V.push(f(i/nu, (j+1)/nv, other));
+      }
+      V.push(f(1, (j+1)/nv, other));
+      V.push(f(0, (j+1)/nv, other));
+   }
+   return V.flat();
+}
+
+// Flat disk cap with texture coordinates
+let diskFlat = (n, radius, zPos) => parametric((u, v) => {
+   let theta = 2 * Math.PI * u;
+   let c = Math.cos(theta);
+   let s = Math.sin(theta);
+   let r = radius * v;
+   return [r * c, r * s, zPos, 0, 0, zPos > 0 ? 1 : -1, u, v];
+}, n, 2);
+
+// Dome cap (convex)
+let diskDome = (n, radius, zPos, domeHeight) => parametric((u, v) => {
+   let theta = 2 * Math.PI * u;
+   let c = Math.cos(theta);
+   let s = Math.sin(theta);
+   let r = radius * v;
+   let h = domeHeight * (1 - v * v);
+   let z = zPos + h * (zPos > 0 ? 1 : -1);
+   let dz_dr = -2 * domeHeight * v / radius;
+   let len = Math.sqrt(1 + dz_dr * dz_dr);
+   let nx = c / len;
+   let ny = s / len;
+   let nz = (dz_dr / len) * (zPos > 0 ? 1 : -1);
+   return [r * c, r * s, z, nx, ny, nz, u, v];
+}, n, 4);
+
+// Concave cap
+let diskConcave = (n, radius, zPos, depth) => parametric((u, v) => {
+   let theta = 2 * Math.PI * u;
+   let c = Math.cos(theta);
+   let s = Math.sin(theta);
+   let r = radius * v;
+   let h = -depth * v * v;
+   let z = zPos + h * (zPos > 0 ? 1 : -1);
+   let dz_dr = -2 * depth * v / radius;
+   let len = Math.sqrt(1 + dz_dr * dz_dr);
+   let nx = c / len;
+   let ny = s / len;
+   let nz = (dz_dr / len) * (zPos > 0 ? 1 : -1);
+   return [r * c, r * s, z, nx, ny, nz, u, v];
+}, n, 4);
+
+// Custom cap shape
+let diskCustom = (n, radius, zPos, shapeFunc) => parametric((u, v) => {
+   let theta = 2 * Math.PI * u;
+   let c = Math.cos(theta);
+   let s = Math.sin(theta);
+   let r = radius * v;
+   let h = shapeFunc(v);
+   let z = zPos + h * (zPos > 0 ? 1 : -1);
+   let dh_dv = (shapeFunc(Math.min(1, v + 0.01)) - h) / 0.01;
+   let dz_dr = dh_dv / radius;
+   let len = Math.sqrt(1 + dz_dr * dz_dr);
+   let nx = c / len;
+   let ny = s / len;
+   let nz = (dz_dr / len) * (zPos > 0 ? 1 : -1);
+   return [r * c, r * s, z, nx, ny, nz, u, v];
+}, n, 4);
+
+// ========== CYLINDER DIMENSIONS (ADJUSTABLE) ==========
+// Main cylinder: height:diameter = 4.2:2.5
+let radius = 1.25 * 0.2;      // Main cylinder radius (adjust here)
+let height = 4.2 * 0.2;       // Main cylinder height (adjust here)
+let segments = 30;            // Number of segments (more = smoother)
+
+// Cap settings
+let capRadius = radius;       // Cap radius (set to radius for no gap)
+let capOffset = 0.03;         // Cap inset depth (adjust for recess depth)
+
+// Main cylinder side mesh
+let sideMesh = {
+  triangle_strip: true,
+  data: new Float32Array(tube(segments, radius, height))
+};
+
+
+let topCap = diskFlat(segments, capRadius, height/2 - capOffset);
+let bottomCap = diskFlat(segments, capRadius, -height/2 + capOffset);
+
+
+// Cap meshes
+let topCapMesh = {
+  triangle_strip: true,
+  data: new Float32Array(topCap)
+};
+
+let bottomCapMesh = {
+  triangle_strip: true,
+  data: new Float32Array(bottomCap)
+};
+
+// ========== SMALL CYLINDER ON TOP (ADJUSTABLE) ==========
+// Small cylinder: main diameter : small diameter = 2.5:1
+let smallRadius = 0.1;         // Small cylinder radius (adjust here)
+let smallHeight = 0.1;         // Small cylinder height (adjust here)
+let smallCylinderZ = height/2 - capOffset;
+
+let smallCylinderMesh = {
+  triangle_strip: true,
+  data: new Float32Array(tube(segments, smallRadius, smallHeight))
+};
+
+this.vertexShader = `\
+#version 300 es
+uniform mat4 uMF, uMI;
+in  vec3 aPos, aNor;
+in  vec2 aUV;
+out vec3 vPos, vNor;
+out vec2 vUV;
+void main() {
+   vec4 pos = uMF * vec4(aPos, 1.);
+   vec4 nor = vec4(aNor, 0.) * uMI;
+   gl_Position = pos * vec4(1.,1.,-.1,1.);
+   vPos = pos.xyz;
+   vNor = nor.xyz;
+   vUV = aUV;
+}`;
+
+this.fragmentShader = `\
+#version 300 es
+precision highp float;
+uniform vec3 uColor;
+uniform sampler2D uSampler;
+uniform int uUseTexture;
+in  vec3 vPos, vNor;
+in  vec2 vUV;
+out vec4 fragColor;
+
+void main() {
+   vec3 nor = normalize(vNor);
+   float c = .1 + max(0., dot(vec3(.5),nor));
+   
+   if (uUseTexture == 1) {
+      vec4 T = texture(uSampler, vUV);
+      fragColor = vec4(sqrt(c) * uColor * T.rgb, 1.);
+   } else {
+      fragColor = vec4(sqrt(c) * uColor, 1.);
+   }
+}`;
+
+autodraw = false;
+
+// Texture mapping functions
+let vertexMap = map => {
+   let vertexAttribute = (name, size, position) => {
+      let attr = gl.getAttribLocation(gl.program, name);
+      gl.enableVertexAttribArray(attr);
+      gl.vertexAttribPointer(attr, size, gl.FLOAT, false, vertexSize * 4, position * 4);
+   }
+   vertexSize = 0;
+   for (let n = 0 ; n < map.length ; n += 2)
+      vertexSize += map[n+1];
+   let index = 0;
+   for (let n = 0 ; n < map.length ; n += 2) {
+      vertexAttribute(map[n], map[n+1], index);
+      index += map[n+1];
+   }
+}
+
+let textures = {};
+
+let addTexture = (index, src) => {
+   let image = new Image();
+   image.crossOrigin = 'anonymous';
+   let texturePath = 'textures/' + src;
+   
+   image.onload = () => {
+      try {
+         let texture = gl.createTexture();
+         textures[index] = texture;
+         gl.activeTexture(gl.TEXTURE0 + index);
+         gl.bindTexture(gl.TEXTURE_2D, texture);
+         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+         gl.generateMipmap(gl.TEXTURE_2D);
+         console.log('✓ Texture loaded:', texturePath);
+      } catch (e) {
+         console.error('✗ Texture error:', e);
+         console.error('  Use local server: python3 -m http.server 8000');
+      }
+   }
+   image.onerror = () => {
+      console.error('✗ Failed to load:', texturePath);
+      console.error('  Use local server: python3 -m http.server 8000');
+   }
+   image.src = texturePath;
+}
+
+function Matrix() {
+   let m = [identity()], top = 0;
+   this.push = () => { m[top+1] = m[top].slice(); top++; return this; }
+   this.pop  = () => { if (top > 0) top--; return this; }
+   this.get = () => m[top];
+   this.identity = () => { m[top] = identity(); return this; }
+   this.move = (x,y,z) => { m[top]=mxm(m[top],move(x,y,z)); return this; }
+   this.turnX = a => { m[top] = mxm(m[top], turnX(a)); return this; }
+   this.turnY = a => { m[top] = mxm(m[top], turnY(a)); return this; }
+   this.turnZ = a => { m[top] = mxm(m[top], turnZ(a)); return this; }
+   this.scale = (x,y,z) => {
+      m[top] = mxm(m[top], scale(x,y,z));
+      return this;
+   }
+   this.perspective = (x,y,z) => {
+      m[top] = mxm(m[top], perspective(x,y,z));
+      return this;
+   }
+}
+
+let matrix = new Matrix();
+
+// Mouse drag rotation
+let rotationX = 0;
+let rotationY = 0;
+let isDragging = false;
+let lastMouseX = 0;
+let lastMouseY = 0;
+
+canvas.addEventListener('mousedown', (e) => {
+   isDragging = true;
+   let rect = canvas.getBoundingClientRect();
+   lastMouseX = e.clientX - rect.left;
+   lastMouseY = e.clientY - rect.top;
+   canvas.style.cursor = 'grabbing';
+});
+
+canvas.addEventListener('mousemove', (e) => {
+   if (!isDragging) return;
+   let rect = canvas.getBoundingClientRect();
+   let currentMouseX = e.clientX - rect.left;
+   let currentMouseY = e.clientY - rect.top;
+   let deltaX = currentMouseX - lastMouseX;
+   let deltaY = currentMouseY - lastMouseY;
+   rotationY += deltaX * 0.01;
+   rotationX += deltaY * 0.01;
+   rotationX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotationX));
+   lastMouseX = currentMouseX;
+   lastMouseY = currentMouseY;
+});
+
+canvas.addEventListener('mouseup', () => {
+   isDragging = false;
+   canvas.style.cursor = 'grab';
+});
+
+canvas.addEventListener('mouseleave', () => {
+   isDragging = false;
+   canvas.style.cursor = 'default';
+});
+
+canvas.style.cursor = 'grab';
+
+let drawMyMesh = (mesh, color, useTexture = false, textureIndex = 0) => {
+   setUniform('3fv', 'uColor', color);
+   setUniform('1i', 'uUseTexture', useTexture ? 1 : 0);
+   if (useTexture && textures[textureIndex]) {
+      gl.activeTexture(gl.TEXTURE0 + textureIndex);
+      gl.bindTexture(gl.TEXTURE_2D, textures[textureIndex]);
+      setUniform('1iv', 'uSampler', [textureIndex]);
+   }
+   let m = mxm(perspective(0,0,-.1), matrix.get());
+   setUniform('Matrix4fv', 'uMF', false, m);
+   setUniform('Matrix4fv', 'uMI', false, inverse(m));
+   drawMesh(mesh);
+}
+
+let textureLoaded = false;
+let vertexMapSet = false;
+
+this.update = () => {
+   if (!vertexMapSet && typeof vertexMap === 'function') {
+      vertexMap(['aPos', 3, 'aNor', 3, 'aUV', 2]);
+      vertexMapSet = true;
+   }
+   
+   if (!textureLoaded) {
+      addTexture(0, 'portra_400.png');  // Change texture filename here
+      textureLoaded = true;
+   }
+   
+   matrix.identity();
+   matrix.turnY(rotationY);
+   matrix.turnX(rotationX);
+   
+   // Draw main cylinder side (with texture)
+   drawMyMesh(sideMesh, [1.0, 1.0, 1.0], true, 0);
+   
+   // Draw caps (dark gray)
+   drawMyMesh(topCapMesh, [0.15, 0.15, 0.15], false);
+   drawMyMesh(bottomCapMesh, [0.15, 0.15, 0.15], false);
+   
+   // Draw small cylinder on top
+   matrix.push();
+      matrix.move(0, 0, smallCylinderZ + smallHeight/2);
+      drawMyMesh(smallCylinderMesh, [0.15, 0.15, 0.15], false);
+   matrix.pop();
+}
+
+}
+gl_start(canvas, new Scene());
+</script>

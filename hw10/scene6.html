@@ -1,0 +1,187 @@
+<body bgcolor=black>
+<center><canvas id=canvas width=800 height=800></canvas>
+<script src=webgl.js></script>
+<script>
+
+function Scene() {
+
+   // Vertex shader with texture coordinates
+   this.vertexShader = `#version 300 es
+      uniform mat4 uMF, uMI;
+
+      in  vec3 aPos, aNor;
+      in  vec2 aUV;
+
+      out vec3 vPos, vNor;
+      out vec2 vUV;
+
+      void main() {
+         vec4 pos = uMF * vec4(aPos, 1.);
+         vec4 nor = vec4(aNor, 0.) * uMI;
+         gl_Position = pos * vec4(1.,1.,-.1,1.);
+         vPos = pos.xyz;
+         vNor = nor.xyz;
+         vUV  = aUV;
+      }
+   `;
+
+   // Fragment shader with texture sampling
+   this.fragmentShader = `#version 300 es
+      precision highp float;
+      in  vec3 vPos, vNor;
+      in  vec2 vUV;
+      out vec4 fragColor;
+      uniform vec3 uColor;
+      uniform sampler2D uSampler;
+      uniform int uUseTexture;
+
+      void main() {
+         vec3 nor = normalize(vNor);
+         float c = .1 + max(0., dot(vec3( .5),nor))
+                      + max(0., dot(vec3(-.5),nor));
+
+         if (uUseTexture == 1) {
+            vec4 T = texture(uSampler, vUV);
+            fragColor = vec4(sqrt(c)*uColor*T.rgb, 1.);
+         } else {
+            fragColor = vec4(sqrt(c)*uColor, 1.);
+         }
+      }
+   `;
+
+   // Create 6 face meshes: [x,y,z, nx,ny,nz, u,v]
+   
+   // Front face (z = -1), rotated 90° clockwise
+   let frontMesh = {
+      triangle_strip: false,
+      data: new Float32Array([
+         -1,-1,-1, 0,0,-1, 0,1,
+          1,-1,-1, 0,0,-1, 0,0,
+          1, 1,-1, 0,0,-1, 1,0,
+          1, 1,-1, 0,0,-1, 1,0,
+         -1, 1,-1, 0,0,-1, 1,1,
+         -1,-1,-1, 0,0,-1, 0,1
+      ])
+   };
+
+   // Back face (z = 1)
+   let backMesh = {
+      triangle_strip: false,
+      data: new Float32Array([
+         -1,-1, 1, 0,0, 1, 1,0,
+          1,-1, 1, 0,0, 1, 0,0,
+          1, 1, 1, 0,0, 1, 0,1,
+          1, 1, 1, 0,0, 1, 0,1,
+         -1, 1, 1, 0,0, 1, 1,1,
+         -1,-1, 1, 0,0, 1, 1,0
+      ])
+   };
+
+   // Left face (x = -1)
+   let leftMesh = {
+      triangle_strip: false,
+      data: new Float32Array([
+         -1,-1,-1,-1,0,0, 1,0,
+         -1, 1,-1,-1,0,0, 1,1,
+         -1, 1, 1,-1,0,0, 0,1,
+         -1, 1, 1,-1,0,0, 0,1,
+         -1,-1, 1,-1,0,0, 0,0,
+         -1,-1,-1,-1,0,0, 1,0
+      ])
+   };
+
+   // Right face (x = 1)
+   let rightMesh = {
+      triangle_strip: false,
+      data: new Float32Array([
+          1,-1,-1, 1,0,0, 0,0,
+          1, 1,-1, 1,0,0, 0,1,
+          1, 1, 1, 1,0,0, 1,1,
+          1, 1, 1, 1,0,0, 1,1,
+          1,-1, 1, 1,0,0, 1,0,
+          1,-1,-1, 1,0,0, 0,0
+      ])
+   };
+
+   // Top face (y = 1), rotated 90° counter-clockwise
+   let topMesh = {
+      triangle_strip: false,
+      data: new Float32Array([
+         -1, 1,-1, 0, 1,0, 0,1,
+          1, 1,-1, 0, 1,0, 0,0,
+          1, 1, 1, 0, 1,0, 1,0,
+          1, 1, 1, 0, 1,0, 1,0,
+         -1, 1, 1, 0, 1,0, 1,1,
+         -1, 1,-1, 0, 1,0, 0,1
+      ])
+   };
+
+   // Bottom face (y = -1), rotated 90° counter-clockwise
+   let bottomMesh = {
+      triangle_strip: false,
+      data: new Float32Array([
+         -1,-1,-1, 0,-1,0, 1,1,
+          1,-1,-1, 0,-1,0, 1,0,
+          1,-1, 1, 0,-1,0, 0,0,
+          1,-1, 1, 0,-1,0, 0,0,
+         -1,-1, 1, 0,-1,0, 0,1,
+         -1,-1,-1, 0,-1,0, 1,1
+      ])
+   };
+
+   // Texture files (place images in textures/ folder)
+   let textureFiles = {
+      front:  '1.png',
+      back:   '3.png',
+      left:   '4.png',
+      right:  '2.png',
+      top:    '5.png',
+      bottom: '5.png'
+   };
+
+   let texturesLoaded = false;
+
+   this.update = () => {
+      // Load textures once
+      if (!texturesLoaded) {
+         addTexture(0, textureFiles.front);
+         addTexture(1, textureFiles.back);
+         addTexture(2, textureFiles.left);
+         addTexture(3, textureFiles.right);
+         addTexture(4, textureFiles.top);
+         addTexture(5, textureFiles.bottom);
+         texturesLoaded = true;
+      }
+
+      vertexMap(['aPos', 3, 'aNor', 3, 'aUV', 2]);
+
+      let time = Date.now() / 1000;
+      let transform = mxm(turnY(time/3),
+                     mxm(turnX(Math.PI/6),
+                     scale(0.3, 0.4, 0.25)));
+
+      setUniform('1i', 'uUseTexture', 1);
+      
+      setUniform('1iv', 'uSampler', [0]);
+      drawObj(frontMesh, transform, [1,1,1]);
+
+      setUniform('1iv', 'uSampler', [1]);
+      drawObj(backMesh, transform, [1,1,1]);
+
+      setUniform('1iv', 'uSampler', [2]);
+      drawObj(leftMesh, transform, [1,1,1]);
+
+      setUniform('1iv', 'uSampler', [3]);
+      drawObj(rightMesh, transform, [1,1,1]);
+
+      setUniform('1iv', 'uSampler', [4]);
+      drawObj(topMesh, transform, [1,1,1]);
+
+      setUniform('1iv', 'uSampler', [5]);
+      drawObj(bottomMesh, transform, [1,1,1]);
+   }
+}
+
+gl_start(canvas, new Scene());
+</script>
+
