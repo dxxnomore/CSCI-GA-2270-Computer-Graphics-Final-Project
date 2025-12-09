@@ -1,0 +1,297 @@
+<body bgcolor="black">
+<center><canvas id="canvas" width="900" height="900"></canvas>
+<script src="webgl.js"></script>
+<script>
+// 仅实现：点击胶卷盒后显示暗盒（简化版）
+window.addEventListener('load', () => {
+  const canvas = document.getElementById('canvas');
+
+  // Fallback：若 webgl.js 未暴露 Matrix 等，提供最小实现
+  if (typeof Matrix === 'undefined') {
+    const c = t => Math.cos(t), s = t => Math.sin(t);
+    const identity = () => [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+    const move = (x,y,z) => { if (y===undefined){z=x[2];y=x[1];x=x[0];} return [1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]; }
+    const turnX = t => [1,0,0,0, 0,c(t),s(t),0, 0,-s(t),c(t),0, 0,0,0,1];
+    const turnY = t => [c(t),0,-s(t),0, 0,1,0,0, s(t),0,c(t),0, 0,0,0,1];
+    const turnZ = t => [c(t),s(t),0,0, -s(t),c(t),0,0, 0,0,1,0, 0,0,0,1];
+    const scale = (x,y,z) => [x,0,0,0, 0,y??x,0,0, 0,0,z??x,0, 0,0,0,1];
+    const mxm = (a,b) => { const m=[]; for(let c=0;c<16;c+=4) for(let r=0;r<4;r++) m.push(a[r]*b[c]+a[r+4]*b[c+1]+a[r+8]*b[c+2]+a[r+12]*b[c+3]); return m; };
+    const inverse = src => {
+      const dst=[], cofactor=(c,r)=>{let f=(i,j)=>src[c+i&3|(r+j&3)<<2];
+        return (c+r&1?-1:1)*((f(1,1)*(f(2,2)*f(3,3)-f(3,2)*f(2,3)))-(f(2,1)*(f(1,2)*f(3,3)-f(3,2)*f(1,3)))+(f(3,1)*(f(1,2)*f(2,3)-f(2,2)*f(1,3))));
+      };
+      let det=0; for(let n=0;n<16;n++) dst.push(cofactor(n>>2,n&3));
+      for(let n=0;n<4;n++) det+=src[n]*dst[n<<2];
+      for(let n=0;n<16;n++) dst[n]/=det;
+      return dst;
+    };
+    const perspective = (x,y,z) => [1,0,0,x, 0,1,0,y??x, 0,0,1,z??x, 0,0,0,1];
+    const transpose = m => [m[0],m[4],m[8],m[12], m[1],m[5],m[9],m[13], m[2],m[6],m[10],m[14], m[3],m[7],m[11],m[15]];
+    window.mxm=mxm; window.perspective=perspective; window.inverse=inverse; window.transpose=transpose;
+    window.turnX=turnX; window.turnY=turnY; window.turnZ=turnZ; window.move=move; window.scale=scale;
+    window.Matrix = function() {
+      let m=[identity()], top=0;
+      this.get=()=>m[top];
+      this.identity=()=>{m[top]=identity(); return this;}
+      this.move=(x,y,z)=>{m[top]=mxm(m[top],move(x,y,z)); return this;}
+      this.perspective=(x,y,z)=>{m[top]=mxm(m[top],perspective(x,y,z)); return this;}
+      this.pop=()=>{if(top>0) top--; return this;}
+      this.push=()=>{m[top+1]=m[top].slice(); top++; return this;}
+      this.scale=(x,y,z)=>{m[top]=mxm(m[top],scale(x,y,z)); return this;}
+      this.turnX=a=>{m[top]=mxm(m[top],turnX(a)); return this;}
+      this.turnY=a=>{m[top]=mxm(m[top],turnY(a)); return this;}
+      this.turnZ=a=>{m[top]=mxm(m[top],turnZ(a)); return this;}
+    }
+  }
+
+  // vertexMap 兜底：若缺失则注入
+  if (typeof vertexMap === 'undefined') {
+    window.vertexMap = map => {
+      let stride=0; for(let i=0;i<map.length;i+=2) stride+=map[i+1];
+      let offset=0;
+      for(let i=0;i<map.length;i+=2){
+        const name=map[i], size=map[i+1];
+        const attr=gl.getAttribLocation(gl.program,name);
+        gl.enableVertexAttribArray(attr);
+        gl.vertexAttribPointer(attr,size,gl.FLOAT,false,stride*4,offset*4);
+        offset+=size;
+      }
+      vertexSize=stride;
+    };
+  }
+
+  // addTexture 兜底
+  if (typeof addTexture === 'undefined') {
+    window.addTexture = (index, src) => {
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      image.onload = () => {
+        try {
+          gl.activeTexture(gl.TEXTURE0 + index);
+          gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+          gl.generateMipmap(gl.TEXTURE_2D);
+        } catch (e) { console.error('Fallback addTexture error:', e); }
+      };
+      image.onerror = () => console.error('Failed to load texture', src);
+      image.src = src.includes('/') ? src : ('textures/' + src);
+    };
+  }
+
+  // 拖拽偏移：鼠标拖动使纸盒/暗盒整体平移
+  let dragging = false, lastX = 0, lastY = 0, dragMode = 'move';
+  let posOffset = [0, 0, 0];
+  let rotOffset = [0, 0]; // rotX, rotY
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('mousedown', e => {
+    dragging = true;
+    dragMode = (e.button === 2 || e.shiftKey) ? 'rotate' : 'move';
+    const rect = canvas.getBoundingClientRect();
+    lastX = e.clientX - rect.left;
+    lastY = e.clientY - rect.top;
+  });
+  canvas.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    const dx = x - lastX, dy = y - lastY;
+    if (dragMode === 'move') {
+      const scale = 0.003; // 平移灵敏度
+      posOffset[0] += dx * scale;
+      posOffset[1] -= dy * scale;
+    } else {
+      const rScale = 0.003; // 旋转灵敏度
+      rotOffset[1] += dx * rScale;       // yaw
+      rotOffset[0] += dy * rScale;       // pitch
+      rotOffset[0] = Math.max(-1.2, Math.min(1.2, rotOffset[0])); // 限制仰俯角
+    }
+    lastX = x; lastY = y;
+  });
+  canvas.addEventListener('mouseup', () => dragging = false);
+  canvas.addEventListener('mouseleave', () => dragging = false);
+
+  function Scene() {
+    this.vertexShader = `#version 300 es
+      uniform mat4 uMF, uMI;
+      in vec3 aPos, aNor;
+      in vec2 aUV;
+      out vec3 vPos, vNor;
+      out vec2 vUV;
+      void main() {
+        vec4 pos = uMF * vec4(aPos, 1.);
+        vec4 nor = vec4(aNor, 0.) * uMI;
+        gl_Position = pos * vec4(1.,1.,-.1,1.);
+        vPos = pos.xyz;
+        vNor = nor.xyz;
+        vUV  = aUV;
+      }
+    `;
+
+    this.fragmentShader = `#version 300 es
+      precision highp float;
+      uniform vec3 uColor;
+      uniform sampler2D uSampler;
+      uniform int uUseTexture;
+      in vec3 vPos, vNor;
+      in vec2 vUV;
+      out vec4 fragColor;
+      void main() {
+        vec3 nor = normalize(vNor);
+        float c = .12 + max(0., dot(vec3(.6,.6,.2), nor))
+                       + max(0., dot(vec3(-.5,.4,-.2), nor));
+        vec3 base = uColor;
+        if (uUseTexture == 1) {
+          vec4 T = texture(uSampler, vUV);
+          base *= T.rgb;
+        }
+        fragColor = vec4(sqrt(c) * base, 1.);
+      }
+    `;
+
+    // 纸盒（六面体）——直接复用 hw10 贴图，目标实尺寸比 6*4*4，以 scale 设置
+    const face = (...v) => ({ triangle_strip: false, data: new Float32Array(v) });
+    const cubeFaces = {
+      front: face(-1,-1,-1,0,0,-1,0,1,  1,-1,-1,0,0,-1,0,0,  1,1,-1,0,0,-1,1,0,  1,1,-1,0,0,-1,1,0, -1,1,-1,0,0,-1,1,1, -1,-1,-1,0,0,-1,0,1),
+      back : face(-1,-1, 1,0,0,1,1,0,   1,-1,1,0,0,1,0,0,    1,1,1,0,0,1,0,1,    1,1,1,0,0,1,0,1,   -1,1,1,0,0,1,1,1,  -1,-1,1,0,0,1,1,0),
+      left : face(-1,-1,-1,-1,0,0,1,0, -1,1,-1,-1,0,0,1,1, -1,1,1,-1,0,0,0,1,  -1,1,1,-1,0,0,0,1, -1,-1,1,-1,0,0,0,0, -1,-1,-1,-1,0,0,1,0),
+      right: face( 1,-1,-1,1,0,0,0,0,   1,1,-1,1,0,0,0,1,   1,1,1,1,0,0,1,1,    1,1,1,1,0,0,1,1,    1,-1,1,1,0,0,1,0,   1,-1,-1,1,0,0,0,0),
+      top  : face(-1,1,-1,0,1,0,0,1,    1,1,-1,0,1,0,0,0,   1,1,1,0,1,0,1,0,    1,1,1,0,1,0,1,0,   -1,1,1,0,1,0,1,1,  -1,1,-1,0,1,0,0,1),
+      bottom:face(-1,-1,-1,0,-1,0,1,1,  1,-1,-1,0,-1,0,1,0, 1,-1,1,0,-1,0,0,0,  1,-1,1,0,-1,0,0,0, -1,-1,1,0,-1,0,0,1, -1,-1,-1,0,-1,0,1,1),
+    };
+
+    const boxTextures = [
+      'hw10/textures/1.png',
+      'hw10/textures/3.png',
+      'hw10/textures/4.png',
+      'hw10/textures/2.png',
+      'hw10/textures/5.png',
+      'hw10/textures/5.png',
+    ];
+
+    // 暗盒（金属罐体），简单侧面+盖子
+    const parametric = (f, nu, nv) => {
+      const V = [];
+      for (let j = 0; j < nv; j++) {
+        for (let i = 0; i <= nu; i++) {
+          V.push(f(i/nu, j/nv));
+          V.push(f(i/nu, (j+1)/nv));
+        }
+        V.push(f(1, (j+1)/nv));
+        V.push(f(0, (j+1)/nv));
+      }
+      return V.flat();
+    };
+    const tube = (n, r, h) => {
+      const V=[]; for(let i=0;i<=n;i++){const th=2*Math.PI*i/n;const c=Math.cos(th),s=Math.sin(th);const u=i/n; // u 正向递增，避免左右颠倒
+        V.push(r*c,r*s,-h/2, c,s,0, u,1);
+        V.push(r*c,r*s, h/2, c,s,0, u,0);
+      } return V;
+    };
+    const disk = (n,r,z) => parametric((u,v)=>{
+      const th=2*Math.PI*u; const c=Math.cos(th),s=Math.sin(th); const rr=r*v;
+      return [rr*c, rr*s, z, 0,0, z>0?1:-1, u, v];
+    }, n, 2);
+
+    // 罐体尺寸与细节（参考 hw5 原版）：盖子微内凹、顶部小圆柱
+    const radius = 0.25, height = 0.84, segments = 40;
+    const capOffset = 0.03;
+    const smallRadius = 0.1, smallHeight = 0.1;
+    const smallCylinderZ = height/2 - capOffset;
+
+    const canister = {
+      side: { triangle_strip:true, data:new Float32Array(tube(segments, radius, height)) },
+      top : { triangle_strip:true, data:new Float32Array(disk(segments, radius,  height/2 - capOffset)) },
+      bot : { triangle_strip:true, data:new Float32Array(disk(segments, radius, -height/2 + capOffset)) },
+      small: { triangle_strip:true, data:new Float32Array(tube(segments, smallRadius, smallHeight)) },
+    };
+
+    // 状态：progress 从 0 -> 1 控制暗盒显隐
+    let texturesLoaded = false;
+    let vertexMapSet = false;
+    let target = 0, progress = 0;
+
+    // 双击切换盒/暗盒显示
+    canvas.addEventListener('dblclick', () => {
+      target = target > 0.5 ? 0 : 1;
+    });
+
+    const matrix = new Matrix();
+    const lerp = (a,b,t)=>a+(b-a)*t;
+    const lerpVec3=(a,b,t)=>[lerp(a[0],b[0],t), lerp(a[1],b[1],t), lerp(a[2],b[2],t)];
+
+    const drawTex = (mesh, mat, samplerIdx, color=[1,1,1]) => {
+      autodraw = false;
+      const m = mxm(perspective(0,0,-.6), mat);
+      setUniform('Matrix4fv','uMF',false,m);
+      setUniform('Matrix4fv','uMI',false,inverse(m));
+      setUniform('3fv','uColor',color);
+      setUniform('1i','uUseTexture',1);
+      setUniform('1iv','uSampler',[samplerIdx]);
+      drawMesh(mesh);
+    };
+    const drawSolid = (mesh, mat, color) => {
+      autodraw = false;
+      const m = mxm(perspective(0,0,-.6), mat);
+      setUniform('Matrix4fv','uMF',false,m);
+      setUniform('Matrix4fv','uMI',false,inverse(m));
+      setUniform('3fv','uColor',color);
+      setUniform('1i','uUseTexture',0);
+      drawMesh(mesh);
+    };
+
+    this.update = () => {
+      if (!vertexMapSet) { vertexMap(['aPos',3,'aNor',3,'aUV',2]); vertexMapSet = true; }
+      if (!texturesLoaded) {
+        boxTextures.forEach((src,i)=>addTexture(i,src));
+        addTexture(10,'hw5/textures/portra_400.png'); // 暗盒纹理（可选）
+        texturesLoaded = true;
+      }
+
+      // 平滑过渡
+      progress = lerp(progress, target, 0.12);
+      const spin = performance.now() * 0.0003;
+      const boxVis = 1 - progress;
+      const darkVis = progress;
+
+      // 画纸盒：目标尺寸约 6*4*4，基于 unit cube(-1~1)缩放 (3,2,2)=6*4*4，并整体再缩小到场景合适大小
+      const boxScale = 0.11; // 全局缩放系数，保持视觉大小（可微调）
+      if (boxVis > 0.05) {
+        const visScale = boxVis; // 渐隐时缩小
+        matrix.identity()
+          .move(posOffset[0], posOffset[1], posOffset[2])
+          .turnX(rotOffset[0])
+          .turnY(spin + rotOffset[1])
+          .scale(2*boxScale*visScale, 3*boxScale*visScale, 2*boxScale*visScale);
+        drawTex(cubeFaces.front, matrix.get(), 0);
+        drawTex(cubeFaces.back , matrix.get(), 1);
+        drawTex(cubeFaces.left , matrix.get(), 2);
+        drawTex(cubeFaces.right, matrix.get(), 3);
+        drawTex(cubeFaces.top  , matrix.get(), 4);
+        drawTex(cubeFaces.bottom, matrix.get(), 5);
+      }
+
+      // 画暗盒（由 progress 控制缩放出现）
+      if (darkVis > 0.05) {
+        matrix.identity()
+          // 与纸盒共享出现/消失位置
+          .move(posOffset[0], posOffset[1], posOffset[2])
+          .turnX(rotOffset[0])
+          .turnY(-spin*1.2 + rotOffset[1])
+          .scale(darkVis*0.7, darkVis*0.7, darkVis*0.7);
+        drawTex(canister.side, matrix.get(), 10, [1,1,1]);
+        drawSolid(canister.top, matrix.get(), [0.15,0.15,0.15]);
+        drawSolid(canister.bot, matrix.get(), [0.15,0.15,0.15]);
+        matrix.push();
+          matrix.move(0, 0, smallCylinderZ + smallHeight/2);
+          drawSolid(canister.small, matrix.get(), [0.15,0.15,0.15]);
+        matrix.pop();
+      }
+    };
+  }
+
+  gl_start(canvas, new Scene());
+});
+</script>
+</body>
