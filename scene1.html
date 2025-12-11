@@ -1,5 +1,18 @@
 <style>
-  #canvas:focus { outline: none; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: black;
+  }
+  #canvas {
+    width: 100vw;
+    height: 100vh;
+    outline: none;
+    display: block;
+  }
   #controls {
     position: fixed;
     top: 12px;
@@ -13,13 +26,16 @@
     cursor: pointer;
   }
 </style>
-<body bgcolor="black">
+<body>
 <div id="controls">
   <button id="btnReset">Back</button>
   <button id="btnSpin">Stop rotation</button>
   <button id="btnStrip">Next step</button>
+  <button id="btnBox1">Box 1</button>
+  <button id="btnBox2">Box 2</button>
+  <button id="btnBox3">Box 3</button>
 </div>
-<center><canvas id="canvas" width="900" height="900"></canvas>
+<canvas id="canvas" width="1200" height="900"></canvas>
 <script src="webgl.js"></script>
 <script>
 // 仅实现：点击胶卷盒后显示暗盒（简化版）
@@ -31,6 +47,20 @@ window.addEventListener('load', () => {
   const btnReset = document.getElementById('btnReset');
   const btnSpin = document.getElementById('btnSpin');
   const btnStrip = document.getElementById('btnStrip');
+  const btnBox1 = document.getElementById('btnBox1');
+  const btnBox2 = document.getElementById('btnBox2');
+  const btnBox3 = document.getElementById('btnBox3');
+  // 适配窗口缩放：调整 canvas 像素尺寸以避免模糊
+  const resizeCanvas = () => {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    if (canvas.gl) {
+      canvas.gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+  };
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
 
   // Fallback：若 webgl.js 未暴露 Matrix 等，提供最小实现
   if (typeof Matrix === 'undefined') {
@@ -86,19 +116,24 @@ window.addEventListener('load', () => {
     };
   }
 
-  // addTexture 兜底
+  // addTexture 兜底（统一使用纹理单元0，按索引存储纹理对象）
   if (typeof addTexture === 'undefined') {
+    if (typeof textures === 'undefined') window.textures = {};
     window.addTexture = (index, src) => {
       const image = new Image();
       image.crossOrigin = 'anonymous';
       image.onload = () => {
         try {
-          gl.activeTexture(gl.TEXTURE0 + index);
-          gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+          const tex = gl.createTexture();
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
           gl.generateMipmap(gl.TEXTURE_2D);
+          textures[index] = tex;
         } catch (e) { console.error('Fallback addTexture error:', e); }
       };
       image.onerror = () => console.error('Failed to load texture', src);
@@ -106,10 +141,14 @@ window.addEventListener('load', () => {
     };
   }
 
-  // 拖拽偏移：鼠标拖动使纸盒/暗盒整体平移
+  // 拖拽偏移：鼠标拖动，作用于当前选中的盒子
   let dragging = false, lastX = 0, lastY = 0, dragMode = 'move';
-  let posOffset = [0, 0, 0];
-  let rotOffset = [0, 0]; // rotX, rotY
+  let activeBox = 0;
+  const boxPos = [
+    { pos:[-1.2, -0.2, 0], offset:[0,0,0], rot:[0,0] },
+    { pos:[ 0.0, -0.2, 0], offset:[0,0,0], rot:[0,0] },
+    { pos:[ 1.2, -0.2, 0], offset:[0,0,0], rot:[0,0] },
+  ];
   let autoSpin = true;
   let spinAngle = 0;
   let lastTick = performance.now();
@@ -129,30 +168,37 @@ window.addEventListener('load', () => {
     const dx = x - lastX, dy = y - lastY;
     if (dragMode === 'move') {
       const scale = 0.003; // 平移灵敏度
-      posOffset[0] += dx * scale;
-      posOffset[1] -= dy * scale;
+      boxPos[activeBox].offset[0] += dx * scale;
+      boxPos[activeBox].offset[1] -= dy * scale;
     } else {
       const rScale = 0.003; // 旋转灵敏度
-      rotOffset[1] += dx * rScale;       // yaw
-      rotOffset[0] += dy * rScale;       // pitch
-      rotOffset[0] = Math.max(-1.55, Math.min(1.55, rotOffset[0])); // 放宽仰俯角到约±89°
+      boxPos[activeBox].rot[1] += dx * rScale;       // yaw
+      boxPos[activeBox].rot[0] += dy * rScale;       // pitch
+      boxPos[activeBox].rot[0] = Math.max(-1.55, Math.min(1.55, boxPos[activeBox].rot[0])); // 放宽仰俯角到约±89°
     }
     lastX = x; lastY = y;
   });
   canvas.addEventListener('mouseup', () => dragging = false);
   canvas.addEventListener('mouseleave', () => dragging = false);
 
-  // 键盘：R 切换自转；B 强制回到胶卷盒并收回底片
+  // 键盘：S 切换自转；B 强制回到胶卷盒并收回底片
   const handleKey = e => {
     const k = e.key.toLowerCase();
-    if (k === 'r') autoSpin = !autoSpin;
+    if (k === 's') autoSpin = !autoSpin;
     if (k === 'b') { target = 0; filmTarget = 0; }
+    if (k === '1') activeBox = 0;
+    if (k === '2') activeBox = 1;
+    if (k === '3') activeBox = 2;
   };
   document.addEventListener('keydown', handleKey);
   window.addEventListener('keydown', handleKey);
   canvas.addEventListener('mousedown', () => canvas.focus());
   btnReset.addEventListener('click', () => { target = 0; filmTarget = 0; });
   btnSpin.addEventListener('click', () => { autoSpin = !autoSpin; btnSpin.textContent = autoSpin ? 'Stop rotation' : 'Resume rotation'; });
+  const selectBox = idx => { activeBox = idx; target = 0; filmTarget = 0; };
+  btnBox1.addEventListener('click', () => selectBox(0));
+  btnBox2.addEventListener('click', () => selectBox(1));
+  btnBox3.addEventListener('click', () => selectBox(2));
   // Next step：盒 -> 暗盒 -> 暗盒+底片 -> 盒
   btnStrip.addEventListener('click', () => {
     if (target < 0.5) {          // 盒 -> 暗盒
@@ -218,15 +264,31 @@ window.addEventListener('load', () => {
       bottom:face(-1,-1,-1,0,-1,0,1,1,  1,-1,-1,0,-1,0,1,0, 1,-1,1,0,-1,0,0,0,  1,-1,1,0,-1,0,0,0, -1,-1,1,0,-1,0,0,1, -1,-1,-1,0,-1,0,1,1),
     };
 
-    const boxTextures = [
-      'hw10/textures/1.png',
-      'hw10/textures/3.png',
-      'hw10/textures/4.png',
-      'hw10/textures/2.png',
-      'hw10/textures/5.png',
-      'hw10/textures/5.png',
+    // 三个胶卷盒的六面贴图（可自行替换）
+    const boxTexturesA = [
+      'textures/1.png',
+      'textures/3.png',
+      'textures/4.png',
+      'textures/2.png',
+      'textures/5.png',
+      'textures/5.png',
     ];
-
+    const boxTexturesB = [
+      'textures/1.png',
+      'textures/3.png',
+      'textures/4.png',
+      'textures/2.png',
+      'textures/5.png',
+      'textures/5.png',
+    ];
+    const boxTexturesC = [
+      'textures/1.png',
+      'textures/3.png',
+      'textures/4.png',
+      'textures/2.png',
+      'textures/5.png',
+      'textures/5.png',
+    ];
     // 暗盒（金属罐体），简单侧面+盖子
     const parametric = (f, nu, nv) => {
       const V = [];
@@ -240,10 +302,11 @@ window.addEventListener('load', () => {
       }
       return V.flat();
     };
+    // 圆柱侧面：U 沿周向(长边)，V 沿高度(短边)，保持贴图长边围绕圆周
     const tube = (n, r, h) => {
-      const V=[]; for(let i=0;i<=n;i++){const th=2*Math.PI*i/n;const c=Math.cos(th),s=Math.sin(th);const u=i/n; // u 正向递增，避免左右颠倒
-        V.push(r*c,r*s,-h/2, c,s,0, u,1);
-        V.push(r*c,r*s, h/2, c,s,0, u,0);
+      const V=[]; for(let i=0;i<=n;i++){const th=2*Math.PI*i/n;const c=Math.cos(th),s=Math.sin(th);const u=i/n;
+        V.push(r*c,r*s,-h/2, c,s,0, u,0); // 底部 v=0
+        V.push(r*c,r*s, h/2, c,s,0, u,1); // 顶部 v=1
       } return V;
     };
     const disk = (n,r,z) => parametric((u,v)=>{
@@ -269,15 +332,15 @@ window.addEventListener('load', () => {
     let vertexMapSet = false;
     let progress = 0;
     let filmProgress = 0; // 底片拉出 0~1
+    // 初始布局仅用于所有盒子在展示阶段的参考（已在顶部 boxPos 设置）
 
-    // 双击切换盒/暗盒显示
+    // 双击：盒子态 -> 进入暗盒；暗盒态 -> 切换/收回 strip
     canvas.addEventListener('dblclick', () => {
-      // 如果已是暗盒显示状态，再次双击拉出/收回底片；否则切换盒/暗盒
       if (target > 0.5) {
         filmTarget = filmTarget > 0.5 ? 0 : 1;
       } else {
-        target = target > 0.5 ? 0 : 1;
-        filmTarget = 0; // 返回盒时收回底片
+        target = 1;
+        filmTarget = 0;
       }
     });
 
@@ -287,17 +350,23 @@ window.addEventListener('load', () => {
 
     const drawTex = (mesh, mat, samplerIdx, color=[1,1,1]) => {
       autodraw = false;
-      const m = mxm(perspective(0,0,-.6), mat);
+      const aspect = canvas.width / canvas.height;
+      const m = mxm(perspective(0,0,-.6), mxm(scale(1/aspect,1,1), mat));
       setUniform('Matrix4fv','uMF',false,m);
       setUniform('Matrix4fv','uMI',false,inverse(m));
       setUniform('3fv','uColor',color);
       setUniform('1i','uUseTexture',1);
-      setUniform('1iv','uSampler',[samplerIdx]);
+      if (textures[samplerIdx]) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, textures[samplerIdx]);
+        setUniform('1iv','uSampler',[0]); // 使用纹理单元0
+      }
       drawMesh(mesh);
     };
     const drawSolid = (mesh, mat, color) => {
       autodraw = false;
-      const m = mxm(perspective(0,0,-.6), mat);
+      const aspect = canvas.width / canvas.height;
+      const m = mxm(perspective(0,0,-.6), mxm(scale(1/aspect,1,1), mat));
       setUniform('Matrix4fv','uMF',false,m);
       setUniform('Matrix4fv','uMI',false,inverse(m));
       setUniform('3fv','uColor',color);
@@ -307,12 +376,14 @@ window.addEventListener('load', () => {
 
     this.update = () => {
       if (!vertexMapSet) { vertexMap(['aPos',3,'aNor',3,'aUV',2]); vertexMapSet = true; }
-      if (!texturesLoaded) {
-        boxTextures.forEach((src,i)=>addTexture(i,src));
-        addTexture(10,'hw5/textures/portra_400.png'); // 暗盒纹理（可选）
-        addTexture(11,'hw5/textures/portra_400.png'); // 底片占位
-        texturesLoaded = true;
-      }
+        if (!texturesLoaded) {
+          boxTexturesA.forEach((src,i)=>addTexture(0+i,src));   // 盒子A
+          boxTexturesB.forEach((src,i)=>addTexture(20+i,src));  // 盒子B
+          boxTexturesC.forEach((src,i)=>addTexture(40+i,src));  // 盒子C
+          addTexture(10,'textures/e100_can2.png'); // 暗盒纹理
+          addTexture(11,'textures/cp200_can.jpg'); // 底片占位/齿孔纹理
+          texturesLoaded = true;
+        }
 
       // 平滑过渡
       const now = performance.now();
@@ -330,26 +401,43 @@ window.addEventListener('load', () => {
       const boxScale = 0.11; // 全局缩放系数，保持视觉大小（可微调）
       if (boxVis > 0.05) {
         const visScale = boxVis; // 渐隐时缩小
-        matrix.identity()
-          .move(posOffset[0], posOffset[1], posOffset[2])
-          .turnX(rotOffset[0])
-          .turnY(spin + rotOffset[1])
-          .scale(2*boxScale*visScale, 3*boxScale*visScale, 2*boxScale*visScale);
-        drawTex(cubeFaces.front, matrix.get(), 0);
-        drawTex(cubeFaces.back , matrix.get(), 1);
-        drawTex(cubeFaces.left , matrix.get(), 2);
-        drawTex(cubeFaces.right, matrix.get(), 3);
-        drawTex(cubeFaces.top  , matrix.get(), 4);
-        drawTex(cubeFaces.bottom, matrix.get(), 5);
+        // 三个盒子全部展示，按各自贴图与偏移
+        const texGroups = [
+          [0,1,2,3,4,5],
+          [20,21,22,23,24,25],
+          [40,41,42,43,44,45],
+        ];
+        for (let i = 0; i < 3; i++) {
+          matrix.identity()
+            .move(
+              boxPos[i].pos[0] + boxPos[i].offset[0],
+              boxPos[i].pos[1] + boxPos[i].offset[1],
+              boxPos[i].pos[2] + boxPos[i].offset[2]
+            )
+            .turnX(boxPos[i].rot[0])
+            .turnY(spin + boxPos[i].rot[1])
+            .scale(2*boxScale*visScale, 3*boxScale*visScale, 2*boxScale*visScale);
+          const t = texGroups[i];
+          drawTex(cubeFaces.front, matrix.get(), t[0]);
+          drawTex(cubeFaces.back , matrix.get(), t[1]);
+          drawTex(cubeFaces.left , matrix.get(), t[2]);
+          drawTex(cubeFaces.right, matrix.get(), t[3]);
+          drawTex(cubeFaces.top  , matrix.get(), t[4]);
+          drawTex(cubeFaces.bottom,matrix.get(), t[5]);
+        }
       }
 
-      // 画暗盒（由 progress 控制缩放出现）
+      // 画暗盒（由 progress 控制缩放出现）——仅选中盒
       if (darkVis > 0.05) {
         matrix.identity()
           // 与纸盒共享出现/消失位置
-          .move(posOffset[0], posOffset[1], posOffset[2])
-          .turnX(rotOffset[0])
-          .turnY(-spin*1.2 + rotOffset[1])
+          .move(
+            boxPos[activeBox].pos[0] + boxPos[activeBox].offset[0],
+            boxPos[activeBox].pos[1] + boxPos[activeBox].offset[1],
+            boxPos[activeBox].pos[2] + boxPos[activeBox].offset[2]
+          )
+          .turnX(boxPos[activeBox].rot[0])
+          .turnY(-spin*1.2 + boxPos[activeBox].rot[1])
           .turnX(-Math.PI / 2) // 竖直且倒转，让小圆柱朝上
           .scale(darkVis*0.7, darkVis*0.7, darkVis*0.7);
         drawTex(canister.side, matrix.get(), 10, [1,1,1]);
@@ -382,7 +470,7 @@ window.addEventListener('load', () => {
           matrix.push();
             // 从开口生成：锚点在开口处，长度从 0 拉伸到目标
             matrix.move(-radius - filmBias, 0, 0);        // 贴在侧壁开口，略微外偏
-            matrix.turnX(rotOffset[0]).turnY(rotOffset[1]).turnX(-Math.PI / 2);
+            matrix.turnX(boxPos[activeBox].rot[0]).turnY(boxPos[activeBox].rot[1]).turnX(-Math.PI / 2);
             matrix.scale(filmProgress, 1, 1);             // 仅沿 X 拉伸，防穿模
             matrix.scale(0.7,0.7,0.7);                     // 匹配暗盒缩放
             // 绘制时关闭深度写入，减少与罐体的深度冲突
