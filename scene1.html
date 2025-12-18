@@ -265,14 +265,16 @@ window.addEventListener('load', () => {
     };
 
     // 三个胶卷盒的六面贴图（可自行替换）
+    // Box1：使用原先 box2 的贴图顺序，换成 80 系列六张
     const boxTexturesA = [
-      'textures/1.png',
-      'textures/3.png',
-      'textures/4.png',
-      'textures/2.png',
-      'textures/5.png',
-      'textures/5.png',
+      'textures/80_1.png',
+      'textures/80_3.png',
+      'textures/80_4.png',
+      'textures/80_2.png',
+      'textures/80_5.png',
+      'textures/80_6.png',
     ];
+    // Box2：保持原样
     const boxTexturesB = [
       'textures/1.png',
       'textures/3.png',
@@ -281,13 +283,14 @@ window.addEventListener('load', () => {
       'textures/5.png',
       'textures/5.png',
     ];
+    // Box3：使用 yestar 六张
     const boxTexturesC = [
-      'textures/1.png',
-      'textures/3.png',
-      'textures/4.png',
-      'textures/2.png',
-      'textures/5.png',
-      'textures/5.png',
+      'textures/yestar_1.png',
+      'textures/yestar_3.png',
+      'textures/yestar_4.png',
+      'textures/yestar_2.png',
+      'textures/yestar_6.png',
+      'textures/yestar_5.png',
     ];
     // 暗盒（金属罐体），简单侧面+盖子
     const parametric = (f, nu, nv) => {
@@ -380,8 +383,11 @@ window.addEventListener('load', () => {
           boxTexturesA.forEach((src,i)=>addTexture(0+i,src));   // 盒子A
           boxTexturesB.forEach((src,i)=>addTexture(20+i,src));  // 盒子B
           boxTexturesC.forEach((src,i)=>addTexture(40+i,src));  // 盒子C
-          addTexture(10,'textures/e100_can2.png'); // 暗盒纹理
-          addTexture(11,'textures/cp200_can.jpg'); // 底片占位/齿孔纹理
+          // 暗盒纹理：Box1 用 80can，Box2/Box3 用 e100_can2；底片用 11
+          addTexture(10,'textures/80_can.png');     // Box1 暗盒
+          addTexture(12,'textures/e100_can2.png');  // Box2 暗盒
+          addTexture(13,'textures/yestar_can.png'); // Box3 暗盒
+          addTexture(11,'textures/cp200_can.jpg');  // 底片占位/齿孔纹理
           texturesLoaded = true;
         }
 
@@ -429,6 +435,7 @@ window.addEventListener('load', () => {
 
       // 画暗盒（由 progress 控制缩放出现）——仅选中盒
       if (darkVis > 0.05) {
+        const darkTexIdx = [10,12,13][activeBox]; // 每个盒子对应的暗盒贴图
         matrix.identity()
           // 与纸盒共享出现/消失位置
           .move(
@@ -440,7 +447,7 @@ window.addEventListener('load', () => {
           .turnY(-spin*1.2 + boxPos[activeBox].rot[1])
           .turnX(-Math.PI / 2) // 竖直且倒转，让小圆柱朝上
           .scale(darkVis*0.7, darkVis*0.7, darkVis*0.7);
-        drawTex(canister.side, matrix.get(), 10, [1,1,1]);
+        drawTex(canister.side, matrix.get(), darkTexIdx, [1,1,1]);
         drawSolid(canister.top, matrix.get(), [0.15,0.15,0.15]);
         drawSolid(canister.bot, matrix.get(), [0.15,0.15,0.15]);
         matrix.push();

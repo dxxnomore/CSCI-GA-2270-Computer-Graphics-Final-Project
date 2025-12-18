@@ -113,6 +113,9 @@ let setUniform = (type,name,a,b,c) => (gl['uniform'+type])(gl.getUniformLocation
 // Shared global object.
 let _ = {};
 
+// 全局纹理表：按索引存储已创建的纹理对象
+let textures = {};
+
 // SOME USEFUL FUNCTIONS
 let add = (a,b) => { let v = []; for (let i=0 ; i<a.length ; i++) v.push(a[i] + b[i]); return v; }
 let cross = (a,b) => [ a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0] ];
@@ -373,11 +376,16 @@ let addTexture = (index, src) => {
    image.crossOrigin = 'anonymous';
    image.onload = () => {
       try {
-         gl.activeTexture(gl.TEXTURE0 + index);
-         gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+         const tex = gl.createTexture();
+         textures[index] = tex;
+         // 总是使用纹理单元0加载，避免索引超出 MAX_COMBINED_TEXTURE_IMAGE_UNITS
+         gl.activeTexture(gl.TEXTURE0);
+         gl.bindTexture(gl.TEXTURE_2D, tex);
+         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR_MIPMAP_NEAREST);
-         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
          gl.generateMipmap(gl.TEXTURE_2D);
       } catch (e) {
          console.error('Texture error:', e);
