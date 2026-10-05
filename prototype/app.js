@@ -229,7 +229,10 @@ $('reset-view').addEventListener('click', () => state.model?.reset());
 
 async function start() {
   state.films = await readData();
-  if (state.films.length) selectFilm(location.hash ? decodeURIComponent(location.hash.slice(1)) : state.films[0].id);
+  if (state.films.length) {
+    const requested = location.hash ? decodeURIComponent(location.hash.slice(1)) : '';
+    selectFilm(state.films.some(f => f.id === requested) ? requested : state.films[0].id);
+  }
   else renderList();
   init3D();
 }
