@@ -1,0 +1,56 @@
+{
+  "updatedAt": "2026-10-06",
+  "films": [
+    {
+      "id": "hp5-plus",
+      "brand": "ILFORD",
+      "name": "HP5 PLUS",
+      "nameZh": "黑白负片",
+      "type": "黑白负片",
+      "format": "135 / 120",
+      "iso": 400,
+      "process": "黑白冲洗",
+      "description": "一款适合日常、纪实与弱光拍摄的黑白胶片。这里先展示基本参数；不同批次的包装和用户经验将在核实后补充。",
+      "source": "https://www.ilfordphoto.com/amfile/file/download/file/1903/product/693/",
+      "modelLabel": "HP5 PLUS",
+      "edition": "包装示意模型",
+      "scanStatus": "等待授权扫描",
+      "photos": [],
+      "tips": []
+    },
+    {
+      "id": "portra-400",
+      "brand": "KODAK",
+      "name": "PORTRA 400",
+      "nameZh": "彩色负片",
+      "type": "彩色负片",
+      "format": "135 / 120",
+      "iso": 400,
+      "process": "C-41",
+      "description": "一款常见于人像和日常摄影的彩色负片。本馆之后会把包装版本、实际样片和经过编辑的使用建议分开呈现。",
+      "source": "https://kodakprofessional.com/photographers/film/color/kodak-professional-portra-400-film/516",
+      "modelLabel": "PORTRA 400",
+      "edition": "包装示意模型",
+      "scanStatus": "等待授权扫描",
+      "photos": [],
+      "tips": []
+    },
+    {
+      "id": "ektachrome-e100",
+      "brand": "KODAK",
+      "name": "EKTACHROME E100",
+      "nameZh": "彩色反转片",
+      "type": "彩色反转片",
+      "format": "135 / 120",
+      "iso": 100,
+      "process": "E-6",
+      "description": "可直接得到正像的彩色反转片。未来可在同一条目中对照纸盒、暗盒、幻灯片与摄影者的成片。",
+      "source": "https://www.kodakprofessional.com/photographers/film/color/kodak-professional-ektachrome-film-e100/531",
+      "modelLabel": "E100",
+      "edition": "包装示意模型",
+      "scanStatus": "等待授权扫描",
+      "photos": [],
+      "tips": []
+    }
+  ]
+}
