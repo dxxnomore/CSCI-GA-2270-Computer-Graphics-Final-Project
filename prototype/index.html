@@ -3,62 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#111111">
-  <meta name="description" content="探索胶片的包装、暗盒、参数与摄影者的影像。一个面向中文读者的胶片资料馆初版。">
-  <title>胶片资料馆 · Film Archive</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23111'/%3E%3Crect x='12' y='12' width='40' height='40' rx='2' fill='none' stroke='white' stroke-width='3'/%3E%3Ccircle cx='32' cy='32' r='11' fill='none' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
+  <meta name="theme-color" content="#101010">
+  <meta name="description" content="浏览胶片、查看包装与暗盒的 3D 模型，以及胶片的基本资料。">
+  <title>胶片资料馆</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23101010'/%3E%3Crect x='12' y='12' width='40' height='40' fill='none' stroke='white' stroke-width='3'/%3E%3Ccircle cx='32' cy='32' r='10' fill='none' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./style.css">
   <script defer src="./app.js"></script>
 </head>
 <body>
-  <div class="site-shell">
-    <header class="masthead">
-      <a class="identity" href="#top" aria-label="胶片资料馆首页"><span class="identity-mark" aria-hidden="true"><span></span></span><span>胶片资料馆</span><small>FILM ARCHIVE</small></a>
-      <nav aria-label="主要导航"><a href="#collection">馆藏目录</a><a href="#about">关于资料馆</a></nav>
-      <div class="masthead-note">独立胶片档案 · 初版 0.1</div>
-    </header>
-
-    <main id="top">
-      <section class="intro" aria-labelledby="page-title">
-        <div class="intro-kicker"><span class="fine-line"></span> 记录一卷胶片的外形与影像</div>
-        <h1 id="page-title">从纸盒，到照片。</h1>
-        <p>浏览胶片的包装、暗盒与基本资料。样片和摄影者的经验将在核实与授权后，逐步加入同一份档案。</p>
-      </section>
-
-      <section id="collection" class="archive" aria-label="胶片目录与展品">
-        <aside class="catalogue" aria-labelledby="catalogue-title">
-          <div class="section-heading"><div><span class="eyebrow">01 / COLLECTION</span><h2 id="catalogue-title">馆藏目录</h2></div><span id="item-count" class="item-count">03 ITEMS</span></div>
-          <label class="search-box"><span class="sr-only">搜索胶片</span><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"></circle><path d="m13 13 5 5"></path></svg><input id="search" type="search" placeholder="搜索品牌、型号、ISO" autocomplete="off"></label>
-          <div id="filters" class="filters" role="group" aria-label="按胶片类型筛选"><button type="button" data-filter="全部" aria-pressed="true">全部</button><button type="button" data-filter="黑白负片" aria-pressed="false">黑白</button><button type="button" data-filter="彩色负片" aria-pressed="false">彩色负片</button><button type="button" data-filter="彩色反转片" aria-pressed="false">反转片</button></div>
-          <div id="film-list" class="film-list" aria-live="polite"></div>
-          <p class="catalogue-foot">当前为少量示例条目，包装为 3D 示意模型。</p>
-        </aside>
-
-        <div class="exhibit">
-          <div class="viewer-head"><div><span class="eyebrow light">02 / OBJECT VIEW</span><span id="viewer-title" class="viewer-title">胶片包装</span></div><span class="viewer-index" id="viewer-index">NO. 001</span></div>
-          <div class="viewer-stage" id="viewer-stage"><canvas id="model-canvas" aria-label="可拖动旋转的胶片包装三维示意模型"></canvas><div class="stage-grid" aria-hidden="true"></div><div class="viewer-hint" id="viewer-hint">拖动旋转 · 选择下方阶段</div><div class="viewer-fallback" id="viewer-fallback" hidden>3D 模型暂时无法载入。胶片资料仍可正常浏览。</div><span class="stage-corner top-left"></span><span class="stage-corner top-right"></span><span class="stage-corner bottom-left"></span><span class="stage-corner bottom-right"></span></div>
-          <div class="stage-controls" role="group" aria-label="查看胶片结构"><button type="button" data-stage="0" class="selected" aria-pressed="true"><span>01</span> 纸盒</button><button type="button" data-stage="1" aria-pressed="false"><span>02</span> 暗盒</button><button type="button" data-stage="2" aria-pressed="false"><span>03</span> 胶片</button><button type="button" id="reset-view" class="reset-view" aria-label="重置三维视角">重置视角 ↺</button></div>
-          <div class="viewer-disclaimer"><span id="model-edition">包装示意模型</span><span>非实际商品扫描</span></div>
+  <header class="site-header">
+    <a class="brand" href="#" id="home-link" aria-label="返回胶片目录"><span class="brand-mark" aria-hidden="true"></span>胶片资料馆</a>
+  </header>
+  <main>
+    <section id="collection" class="collection" aria-labelledby="collection-title">
+      <div class="collection-heading"><h1 id="collection-title">胶片目录</h1></div>
+      <div id="film-grid" class="film-grid" aria-live="polite"></div>
+      <p id="load-error" class="load-error" hidden>胶片目录暂时无法读取，请稍后重新打开。</p>
+    </section>
+    <section id="detail" class="detail" aria-labelledby="record-title" hidden>
+      <div class="detail-top"><button type="button" id="back-button" class="back-button">← 返回目录</button></div>
+      <div class="detail-layout">
+        <div class="viewer">
+          <div class="viewer-stage"><canvas id="model-canvas" aria-label="可拖动旋转的胶片三维示意模型"></canvas><div id="viewer-fallback" class="viewer-fallback" hidden>3D 模型暂时无法载入。</div></div>
+          <div class="stage-controls" role="group" aria-label="查看胶片结构"><button type="button" data-stage="0" aria-pressed="true">纸盒</button><button type="button" data-stage="1" aria-pressed="false">暗盒</button><button type="button" data-stage="2" aria-pressed="false">胶片</button><button type="button" id="reset-view" aria-label="重置三维视角">重置视角</button></div>
         </div>
-
-        <article class="record" aria-labelledby="record-title">
-          <div class="record-head"><span class="eyebrow">03 / RECORD</span><span class="record-status">资料条目 · 持续整理</span></div>
-          <p id="record-brand" class="record-brand">ILFORD</p>
-          <h2 id="record-title">HP5 PLUS</h2>
-          <p id="record-type" class="record-type">黑白负片</p>
-          <p id="record-description" class="record-description"></p>
-          <div class="spec-heading">基本资料 <span>SPECIFICATIONS</span></div>
-          <dl class="spec-list"><div><dt>感光度</dt><dd id="spec-iso">ISO 400</dd></div><div><dt>画幅</dt><dd id="spec-format">135 / 120</dd></div><div><dt>类型</dt><dd id="spec-type">黑白负片</dd></div><div><dt>冲洗</dt><dd id="spec-process">黑白冲洗</dd></div></dl>
-          <div class="scan-line"><span>包装扫描</span><strong id="scan-status">等待授权扫描</strong></div>
-          <a id="record-source" class="source-link" href="https://www.ilfordphoto.com/" target="_blank" rel="noopener noreferrer">查看参数来源 <span aria-hidden="true">↗</span></a>
-        </article>
-      </section>
-
-      <section class="lower-grid" aria-label="样片与经验"><div class="photos-panel"><div class="section-heading"><div><span class="eyebrow">04 / PHOTOGRAPHS</span><h2>用这卷胶片拍摄</h2></div><span class="pending">样片待收录</span></div><div id="photo-list" class="photo-list"><div class="photo-placeholder"><span>01</span><span>摄影作品<br>待收录</span></div><div class="photo-placeholder"><span>02</span><span>摄影作品<br>待收录</span></div><div class="photo-placeholder"><span>03</span><span>摄影作品<br>待收录</span></div></div><p class="panel-note">未来会展示投稿者授权的照片，并注明摄影者、拍摄条件与扫描方式。</p></div><div class="experience-panel"><div class="section-heading"><div><span class="eyebrow">05 / FIELD NOTES</span><h2>摄影者经验</h2></div></div><div id="tip-list" class="tip-list"><p class="empty-note">精选建议正在征集中。这里只会保留有具体拍摄情境和参考价值的经验。</p></div><p class="panel-note">每条建议会保留来源，并区分个人感受与可核查的技术信息。</p></div></section>
-
-      <section id="about" class="about"><div><span class="eyebrow">ABOUT THE ARCHIVE</span><h2>每一卷胶片，<br>都有值得保存的外形。</h2></div><div><p>资料馆希望把一款胶片的包装、暗盒、参数与它拍出的照片放在一起。这里面向中文读者，也欢迎未来收录不同地区和年代的版本。</p><p>初版先验证浏览方式和 3D 展示。实际包装扫描、样片与摄影者建议需要在取得许可、核对资料后加入。</p><div class="sync-note"><span class="sync-dot"></span><span id="data-status">正在读取馆藏数据…</span></div></div></section>
-    </main>
-    <footer><span>胶片资料馆 / FILM ARCHIVE</span><span>为胶片摄影者建立的开放档案雏形</span><a href="#top">返回顶部 ↑</a></footer>
-  </div>
+        <div class="record">
+          <p id="record-brand" class="record-brand"></p><h2 id="record-title"></h2><p id="record-type" class="record-type"></p>
+          <dl class="specs"><div><dt>ISO</dt><dd id="spec-iso"></dd></div><div><dt>画幅</dt><dd id="spec-format"></dd></div><div><dt>冲洗</dt><dd id="spec-process"></dd></div></dl>
+          <a id="record-source" class="source-link" href="#" target="_blank" rel="noopener noreferrer">资料来源 ↗</a>
+          <p class="model-note">3D 包装为示意模型</p>
+        </div>
+      </div>
+      <div id="more-content" class="more-content" hidden></div>
+    </section>
+  </main>
 </body>
 </html>
