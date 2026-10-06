@@ -17,7 +17,18 @@
   <main>
     <section id="collection" class="collection" aria-labelledby="collection-title">
       <div class="collection-heading"><h1 id="collection-title">胶片目录</h1></div>
+      <div class="catalog-tools">
+        <label class="search-field"><span class="visually-hidden">搜索胶片</span><input id="film-search" type="search" placeholder="搜索胶片或品牌" autocomplete="off"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></svg></label>
+        <button type="button" id="filters-toggle" class="filters-toggle" aria-controls="filter-panel" aria-expanded="false">筛选 <span id="filter-count" hidden></span><span class="chevron" aria-hidden="true"></span></button>
+        <label class="sort-field"><span>排序</span><select id="sort-order" aria-label="胶片排序"><option value="default">默认顺序</option><option value="name">名称</option><option value="brand">品牌</option><option value="iso-asc">ISO 从低到高</option><option value="iso-desc">ISO 从高到低</option></select></label>
+      </div>
+      <div id="filter-panel" class="filter-panel" hidden>
+        <div class="filter-head"><h2>筛选</h2><button type="button" id="clear-filters">清除筛选</button></div>
+        <div id="filter-groups" class="filter-groups"></div>
+      </div>
+      <p id="result-count" class="result-count" aria-live="polite"></p>
       <div id="film-grid" class="film-grid" aria-live="polite"></div>
+      <div id="empty-results" class="empty-results" hidden><p>没有找到符合条件的胶片。</p><button type="button" id="reset-results">清除筛选</button></div>
       <p id="load-error" class="load-error" hidden>胶片目录暂时无法读取，请稍后重新打开。</p>
     </section>
     <section id="detail" class="detail" aria-labelledby="record-title" hidden>
