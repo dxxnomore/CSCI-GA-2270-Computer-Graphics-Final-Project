@@ -1,7 +1,18 @@
 const GITHUB_DATA_URL = 'https://raw.githubusercontent.com/dxxnomore/CSCI-GA-2270-Computer-Graphics-Final-Project/film-archive-prototype/data/films.json';
 const LOCAL_DATA_URL = './films.json';
 const $ = id => document.getElementById(id);
-const state = { films: [], selected: null, stage: 0, model: null, modelStarted: false };
+const state = {
+  films: [], selected: null, stage: 0, model: null, modelStarted: false,
+  query: '', sort: 'default',
+  filters: { type: new Set(), iso: new Set(), brand: new Set(), format: new Set(), process: new Set() }
+};
+const filterGroups = [
+  { key: 'type', label: '类型', values: film => [film.type] },
+  { key: 'iso', label: '感光度', values: film => [`ISO ${film.iso}`] },
+  { key: 'brand', label: '品牌', values: film => [film.brand] },
+  { key: 'format', label: '画幅', values: film => String(film.format || '').split('/').map(value => value.trim()) },
+  { key: 'process', label: '冲洗方式', values: film => [film.process] }
+];
 
 function validData(data) {
   return data && Array.isArray(data.films) && data.films.length > 0 && data.films.every(f => f.id && f.name && f.brand && f.type && f.source);
@@ -36,10 +47,67 @@ function makeCard(film) {
   return card;
 }
 
+function renderFilterGroups() {
+  const container = $('filter-groups'); container.replaceChildren();
+  filterGroups.forEach((group, index) => {
+    const options = [...new Set(state.films.flatMap(group.values).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }));
+    if (!options.length) return;
+    const section = document.createElement('details'); section.className = 'filter-group'; section.open = index === 0;
+    const heading = document.createElement('summary'); heading.textContent = group.label;
+    const choices = document.createElement('div'); choices.className = 'filter-choices';
+    options.forEach(value => {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'filter-choice';
+      button.textContent = value; button.setAttribute('aria-pressed', 'false');
+      button.addEventListener('click', () => {
+        if (state.filters[group.key].has(value)) state.filters[group.key].delete(value);
+        else state.filters[group.key].add(value);
+        button.setAttribute('aria-pressed', String(state.filters[group.key].has(value)));
+        renderGrid();
+      });
+      choices.append(button);
+    });
+    section.append(heading, choices); container.append(section);
+  });
+}
+
+function matchingFilms() {
+  const query = state.query.trim().toLocaleLowerCase('zh-CN');
+  const results = state.films.filter(film => {
+    if (query && ![film.brand, film.name, film.nameZh, film.type, film.iso, film.format, film.process]
+      .some(value => String(value || '').toLocaleLowerCase('zh-CN').includes(query))) return false;
+    return filterGroups.every(group => !state.filters[group.key].size || group.values(film)
+      .some(value => state.filters[group.key].has(value)));
+  });
+  const compareText = (a, b) => a.localeCompare(b, 'zh-CN', { numeric: true });
+  results.sort((a, b) => {
+    if (state.sort === 'brand') return compareText(a.brand, b.brand) || compareText(a.name, b.name);
+    if (state.sort === 'iso-asc') return Number(a.iso) - Number(b.iso) || compareText(a.name, b.name);
+    if (state.sort === 'iso-desc') return Number(b.iso) - Number(a.iso) || compareText(a.name, b.name);
+    if (state.sort === 'name') return compareText(a.name, b.name);
+    return 0;
+  });
+  return results;
+}
+
 function renderGrid() {
   const grid = $('film-grid'); grid.replaceChildren();
-  state.films.forEach(film => grid.append(makeCard(film)));
+  const films = matchingFilms();
+  films.forEach(film => grid.append(makeCard(film)));
+  $('result-count').textContent = `${films.length} 卷胶片`;
+  $('empty-results').hidden = films.length > 0 || state.films.length === 0;
   $('load-error').hidden = state.films.length > 0;
+  const selectedCount = Object.values(state.filters).reduce((sum, values) => sum + values.size, 0);
+  $('filter-count').hidden = selectedCount === 0;
+  $('filter-count').textContent = String(selectedCount);
+}
+
+function clearFilters() {
+  state.query = '';
+  $('film-search').value = '';
+  Object.values(state.filters).forEach(values => values.clear());
+  document.querySelectorAll('.filter-choice').forEach(button => button.setAttribute('aria-pressed', 'false'));
+  renderGrid();
 }
 
 function renderMore(film) {
@@ -213,6 +281,15 @@ document.querySelectorAll('[data-stage]').forEach(button => button.addEventListe
 $('reset-view').addEventListener('click', () => state.model?.reset());
 $('back-button').addEventListener('click', () => showGrid());
 $('home-link').addEventListener('click', event => { event.preventDefault(); showGrid(); });
+$('film-search').addEventListener('input', event => { state.query = event.target.value; renderGrid(); });
+$('sort-order').addEventListener('change', event => { state.sort = event.target.value; renderGrid(); });
+$('filters-toggle').addEventListener('click', () => {
+  const open = $('filter-panel').hidden;
+  $('filter-panel').hidden = !open;
+  $('filters-toggle').setAttribute('aria-expanded', String(open));
+});
+$('clear-filters').addEventListener('click', clearFilters);
+$('reset-results').addEventListener('click', clearFilters);
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('detail').hidden) showGrid(); });
 window.addEventListener('hashchange', () => {
   const id = decodeURIComponent(location.hash.slice(1));
@@ -222,6 +299,7 @@ window.addEventListener('hashchange', () => {
 
 async function start() {
   state.films = await readData();
+  renderFilterGroups();
   renderGrid();
   const id = decodeURIComponent(location.hash.slice(1));
   if (state.films.some(f => f.id === id)) openFilm(id, false);
