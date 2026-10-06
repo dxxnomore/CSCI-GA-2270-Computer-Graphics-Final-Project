@@ -1,126 +1,119 @@
 const GITHUB_DATA_URL = 'https://raw.githubusercontent.com/dxxnomore/CSCI-GA-2270-Computer-Graphics-Final-Project/film-archive-prototype/data/films.json';
 const LOCAL_DATA_URL = './films.json';
-const $ = (id) => document.getElementById(id);
-const state = { films: [], selected: null, filter: '全部', query: '', stage: 0, model: null };
+const $ = id => document.getElementById(id);
+const state = { films: [], selected: null, stage: 0, model: null, modelStarted: false };
 
 function validData(data) {
   return data && Array.isArray(data.films) && data.films.length > 0 && data.films.every(f => f.id && f.name && f.brand && f.type && f.source);
 }
 
 async function readData() {
-  for (const [url, label] of [[`${GITHUB_DATA_URL}?v=${Date.now()}`, '馆藏资料已从 GitHub 同步'], [LOCAL_DATA_URL, '当前显示随网站发布的馆藏资料']]) {
+  for (const url of [`${GITHUB_DATA_URL}?v=${Date.now()}`, LOCAL_DATA_URL]) {
     try {
       const response = await fetch(url, { cache: 'no-store' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      if (!validData(data)) throw new Error('Invalid film data');
-      $('data-status').textContent = `${label} · 更新于 ${data.updatedAt || '未知日期'}`;
-      return data.films;
-    } catch (error) { /* Try the next source. */ }
+      if (validData(data)) return data.films;
+    } catch (error) { /* Use the next source. */ }
   }
-  $('data-status').textContent = '馆藏资料暂时无法读取';
   return [];
 }
 
-function makeFilmRow(film, index) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = `film-row${state.selected?.id === film.id ? ' active' : ''}`;
-  button.setAttribute('aria-current', state.selected?.id === film.id ? 'true' : 'false');
-  const number = document.createElement('span'); number.className = 'ordinal'; number.textContent = String(index + 1).padStart(2, '0');
-  const main = document.createElement('span');
-  const name = document.createElement('span'); name.className = 'film-name'; name.textContent = film.name;
-  const brand = document.createElement('span'); brand.className = 'film-brand'; brand.textContent = film.brand;
-  main.append(name, brand);
-  const iso = document.createElement('span'); iso.className = 'row-iso'; iso.textContent = `ISO ${film.iso}`;
-  button.append(number, main, iso);
-  button.addEventListener('click', () => selectFilm(film.id));
-  return button;
+function makeCard(film) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'film-card';
+  card.setAttribute('aria-label', `查看 ${film.brand} ${film.name}`);
+  const face = document.createElement('span'); face.className = 'package-face';
+  const top = document.createElement('span'); top.className = 'package-top'; top.textContent = film.brand;
+  const name = document.createElement('span'); name.className = 'package-name'; name.textContent = film.name;
+  const bottom = document.createElement('span'); bottom.className = 'package-bottom';
+  const iso = document.createElement('span'); iso.className = 'package-iso'; iso.textContent = film.iso;
+  const format = document.createElement('span'); format.className = 'package-format'; format.textContent = 'ISO';
+  bottom.append(iso, format); face.append(top, name, bottom);
+  card.append(face);
+  card.addEventListener('click', () => openFilm(film.id));
+  return card;
 }
 
-function renderList() {
-  const list = $('film-list'); list.replaceChildren();
-  const q = state.query.trim().toLowerCase();
-  const found = state.films.filter(f => (state.filter === '全部' || f.type === state.filter) && (!q || [f.brand, f.name, f.type, f.iso, f.process].some(x => String(x ?? '').toLowerCase().includes(q))));
-  $('item-count').textContent = `${String(found.length).padStart(2, '0')} ITEMS`;
-  if (!found.length) {
-    const empty = document.createElement('p'); empty.className = 'list-empty'; empty.textContent = '没有找到符合条件的胶片。'; list.append(empty);
-  } else found.forEach((film, index) => list.append(makeFilmRow(film, index)));
+function renderGrid() {
+  const grid = $('film-grid'); grid.replaceChildren();
+  state.films.forEach(film => grid.append(makeCard(film)));
+  $('load-error').hidden = state.films.length > 0;
 }
 
-function renderPhotos(photos) {
-  const container = $('photo-list'); container.replaceChildren();
-  if (!Array.isArray(photos) || !photos.length) {
-    for (let i = 1; i <= 3; i++) {
-      const item = document.createElement('div'); item.className = 'photo-placeholder';
-      const no = document.createElement('span'); no.textContent = String(i).padStart(2, '0');
-      const label = document.createElement('span'); label.innerHTML = '摄影作品<br>待收录';
-      item.append(no, label); container.append(item);
-    }
-    return;
+function renderMore(film) {
+  const container = $('more-content'); container.replaceChildren();
+  const photos = Array.isArray(film.photos) ? film.photos.filter(p => p.url && p.author && p.permission) : [];
+  const tips = Array.isArray(film.tips) ? film.tips.filter(t => t.text && t.author) : [];
+  container.hidden = !photos.length && !tips.length;
+  if (photos.length) {
+    const heading = document.createElement('h3'); heading.textContent = '样片';
+    const gallery = document.createElement('div'); gallery.className = 'photos';
+    photos.slice(0, 6).forEach(photo => {
+      const figure = document.createElement('figure');
+      const image = document.createElement('img'); image.src = photo.url; image.alt = photo.alt || `${photo.author} 的胶片照片`; image.loading = 'lazy';
+      const caption = document.createElement('figcaption'); caption.textContent = `${photo.author}${photo.caption ? ` · ${photo.caption}` : ''}`;
+      figure.append(image, caption); gallery.append(figure);
+    });
+    container.append(heading, gallery);
   }
-  photos.slice(0, 6).forEach(photo => {
-    if (!photo.url || !photo.author || !photo.permission) return;
-    const figure = document.createElement('figure'); figure.className = 'photo-entry';
-    const image = document.createElement('img'); image.src = photo.url; image.alt = photo.alt || `${photo.author} 的胶片照片`; image.loading = 'lazy';
-    const caption = document.createElement('figcaption'); caption.textContent = `${photo.author}${photo.caption ? ` · ${photo.caption}` : ''}`;
-    figure.append(image, caption); container.append(figure);
-  });
-}
-
-function renderTips(tips) {
-  const container = $('tip-list'); container.replaceChildren();
-  if (!Array.isArray(tips) || !tips.length) {
-    const item = document.createElement('p'); item.className = 'empty-note'; item.textContent = '精选建议正在征集中。这里只会保留有具体拍摄情境和参考价值的经验。'; container.append(item); return;
+  if (tips.length) {
+    const heading = document.createElement('h3'); heading.textContent = '摄影者经验';
+    const list = document.createElement('div'); list.className = 'tips';
+    tips.slice(0, 3).forEach(tip => {
+      const item = document.createElement('blockquote'); item.textContent = tip.text;
+      const author = document.createElement('cite'); author.textContent = `— ${tip.author}`;
+      item.append(author); list.append(item);
+    });
+    container.append(heading, list);
   }
-  tips.slice(0, 3).forEach(tip => {
-    if (!tip.text || !tip.author) return;
-    const item = document.createElement('div'); item.className = 'tip-item'; item.textContent = tip.text;
-    const by = document.createElement('small'); by.textContent = `— ${tip.author}`; item.append(by); container.append(item);
-  });
 }
 
-function selectFilm(id) {
-  const film = state.films.find(f => f.id === id); if (!film) return;
+function openFilm(id, updateUrl = true) {
+  const film = state.films.find(f => f.id === id);
+  if (!film) return;
   state.selected = film;
-  const index = state.films.indexOf(film);
-  $('viewer-index').textContent = `NO. ${String(index + 1).padStart(3, '0')}`;
+  $('collection').hidden = true;
+  $('detail').hidden = false;
   $('record-brand').textContent = film.brand;
   $('record-title').textContent = film.name;
   $('record-type').textContent = film.nameZh || film.type;
-  $('record-description').textContent = film.description || '';
-  $('spec-iso').textContent = `ISO ${film.iso}`;
-  $('spec-format').textContent = film.format;
-  $('spec-type').textContent = film.type;
-  $('spec-process').textContent = film.process;
-  $('scan-status').textContent = film.scanStatus || '待整理';
-  $('model-edition').textContent = film.edition || '包装示意模型';
+  $('spec-iso').textContent = String(film.iso);
+  $('spec-format').textContent = film.format || '—';
+  $('spec-process').textContent = film.process || '—';
   $('record-source').href = film.source;
-  renderPhotos(film.photos); renderTips(film.tips); renderList();
+  renderMore(film);
+  setStage(0);
   state.model?.setFilm(film);
-  try { history.replaceState(null, '', `#${film.id}`); } catch (error) { /* Optional deep link. */ }
+  if (!state.modelStarted) { state.modelStarted = true; init3D(); }
+  if (updateUrl) history.replaceState(null, '', `#${encodeURIComponent(id)}`);
+  window.scrollTo(0, 0);
+}
+
+function showGrid(updateUrl = true) {
+  $('detail').hidden = true;
+  $('collection').hidden = false;
+  state.selected = null;
+  if (updateUrl) history.replaceState(null, '', location.pathname + location.search);
+  window.scrollTo(0, 0);
 }
 
 function setStage(n) {
   state.stage = n;
-  document.querySelectorAll('[data-stage]').forEach(button => {
-    const selected = Number(button.dataset.stage) === n;
-    button.classList.toggle('selected', selected);
-    button.setAttribute('aria-pressed', String(selected));
-  });
-  $('viewer-title').textContent = ['胶片包装', '胶卷暗盒', '影像胶片'][n];
+  document.querySelectorAll('[data-stage]').forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.stage) === n)));
   state.model?.setStage(n);
 }
 
 async function init3D() {
   let THREE;
   try { THREE = await import('https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js'); }
-  catch (error) { $('viewer-fallback').hidden = false; $('viewer-hint').hidden = true; return; }
+  catch (error) { $('viewer-fallback').hidden = false; return; }
 
   const canvas = $('model-canvas');
   let renderer;
   try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'low-power' }); }
-  catch (error) { $('viewer-fallback').hidden = false; $('viewer-hint').hidden = true; return; }
+  catch (error) { $('viewer-fallback').hidden = false; return; }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const scene = new THREE.Scene();
@@ -164,15 +157,13 @@ async function init3D() {
       ctx.font = '700 38px Arial'; ctx.fillText(film.brand, 24, 58); ctx.font = '700 53px Arial'; ctx.fillText((film.modelLabel || film.name).slice(0, 13), 24, 130); ctx.font = '26px Arial'; ctx.fillText(`ISO ${film.iso}`, 25, 184);
     } else {
       ctx.lineWidth = 3; ctx.strokeRect(26, 26, 460, 668);
-      ctx.font = '700 36px Arial'; ctx.fillText('FILM ARCHIVE', 52, 86);
+      ctx.font = '700 43px Arial'; ctx.fillText(film.brand, 52, 95);
       ctx.fillRect(52, 118, 408, 2);
-      ctx.font = '700 37px Arial'; ctx.fillText(film.brand, 52, 219);
       ctx.font = '700 60px Arial';
       const words = (film.modelLabel || film.name).split(' ');
-      words.forEach((word, i) => ctx.fillText(word.slice(0, 13), 52, 320 + i * 70));
+      words.forEach((word, i) => ctx.fillText(word.slice(0, 13), 52, 275 + i * 70));
       ctx.font = '700 108px Arial'; ctx.fillText(String(film.iso), 48, 574);
       ctx.font = '28px Arial'; ctx.fillText('ISO', 51, 620); ctx.fillText(film.format || '135', 345, 620);
-      ctx.font = '20px Arial'; ctx.fillText('CONCEPT MODEL / NOT ORIGINAL PACKAGING', 52, 671);
     }
     const texture = new THREE.CanvasTexture(c); texture.colorSpace = THREE.SRGBColorSpace; return texture;
   }
@@ -218,22 +209,21 @@ async function init3D() {
   setStage3D(state.stage);
 }
 
-document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => {
-  state.filter = button.dataset.filter;
-  document.querySelectorAll('[data-filter]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
-  renderList();
-}));
-$('search').addEventListener('input', event => { state.query = event.target.value; renderList(); });
 document.querySelectorAll('[data-stage]').forEach(button => button.addEventListener('click', () => setStage(Number(button.dataset.stage))));
 $('reset-view').addEventListener('click', () => state.model?.reset());
+$('back-button').addEventListener('click', () => showGrid());
+$('home-link').addEventListener('click', event => { event.preventDefault(); showGrid(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('detail').hidden) showGrid(); });
+window.addEventListener('hashchange', () => {
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (state.films.some(f => f.id === id)) openFilm(id, false);
+  else showGrid(false);
+});
 
 async function start() {
   state.films = await readData();
-  if (state.films.length) {
-    const requested = location.hash ? decodeURIComponent(location.hash.slice(1)) : '';
-    selectFilm(state.films.some(f => f.id === requested) ? requested : state.films[0].id);
-  }
-  else renderList();
-  init3D();
+  renderGrid();
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (state.films.some(f => f.id === id)) openFilm(id, false);
 }
 start();
