@@ -35,6 +35,14 @@ function makeCard(film) {
   card.type = 'button';
   card.className = 'film-card';
   card.setAttribute('aria-label', `查看 ${film.brand} ${film.name}`);
+  if (film.id === 'hp5-plus') {
+    const box = document.createElement('span'); box.className = 'hp5-package'; box.setAttribute('aria-hidden', 'true');
+    const front = document.createElement('span'); front.className = 'hp5-front';
+    const side = document.createElement('span'); side.className = 'hp5-side';
+    box.append(side, front); card.append(box);
+    card.addEventListener('click', () => openFilm(film.id));
+    return card;
+  }
   const face = document.createElement('span'); face.className = 'package-face';
   const top = document.createElement('span'); top.className = 'package-top'; top.textContent = film.brand;
   const name = document.createElement('span'); name.className = 'package-name'; name.textContent = film.name;

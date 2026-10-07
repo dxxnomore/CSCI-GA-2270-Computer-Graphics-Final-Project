@@ -46,3 +46,12 @@
 .brand-box:after{content:"";position:absolute;left:3px;top:100%;width:100%;height:5px;background:#b9b9b3;transform:skewX(45deg);z-index:-1}
 .brand:focus-visible{outline:2px solid #fff;outline-offset:7px}
 @media(max-width:650px){.site-header{height:74px}.brand{font-size:28px;gap:5px}.brand-box{width:38px;height:38px}}
+
+/* Standard HP5 PLUS 135/36 packaging: unmodified archival scan, with
+   the front and right panels framed independently in their original proportions. */
+.hp5-package{position:relative;display:block;width:min(74%,300px);aspect-ratio:344/225;transform:translateX(-6%) rotate(-4deg);transition:transform .25s;filter:drop-shadow(12px 18px 12px #0005)}
+.hp5-front,.hp5-side{position:absolute;display:block;background-image:url('./assets/ilford-hp5-plus-135-box-scan.jpg');background-repeat:no-repeat}
+.hp5-front{inset:0;background-color:#f0efec;background-size:232.558% 434.744%;background-position:50.439% 30.404%;box-shadow:inset 0 0 0 1px #ffffff24}
+.hp5-side{left:100%;top:0;width:18%;height:100%;background-color:#d8d8d4;background-size:388.350% 434.744%;background-position:97.306% 30.404%;transform:skewY(30deg);transform-origin:left top;filter:brightness(.76)}
+.film-card:hover .hp5-package{transform:translateX(-6%) rotate(-1deg)}
+@media(prefers-reduced-motion:reduce){.hp5-package{transition:none}}
